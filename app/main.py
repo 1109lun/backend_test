@@ -5,6 +5,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models import User
 from app.auth import verify_password, create_access_token
+from hashlib import sha256
+from sqlalchemy.exc import IntegrityError
+
 
 DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/test"
 
@@ -16,6 +19,11 @@ app = FastAPI()
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    birthday: str
 
 @app.post("/login")
 def login(request: LoginRequest):
@@ -43,3 +51,27 @@ def get_user(
         "create_time": user.create_time,
         "last_login": user.last_login,
     }
+
+@app.post("/user/")
+def create_user(user: CreateUserRequest):
+    db = SessionLocal()
+
+    # 檢查是否已存在
+    existing = db.query(User).filter(User.username == user.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    new_user = User(
+        username=user.username,
+        password=sha256(user.password.encode()).hexdigest(),
+        birthday=user.birthday
+    )
+
+    db.add(new_user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="User creation failed")
+
+    return {"message": "User created successfully ✅"}
